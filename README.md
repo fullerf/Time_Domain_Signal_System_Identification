@@ -7,11 +7,14 @@ To my knowledge, there are no implementations or algorithms published which use 
 
 Installation:
 
-At the moment, what I have is a small pile of functions, the main one of which is "afd", contained in "afd_functions_pile".  Using this should be straight-forward.  Download afd_funcitons_pile.jl and then include it in your current project with:
-include("PATH_TO_afd_functions_pile/afd_functions_pile.jl")
+At the moment, what I have is a small pile of functions wrapped in a module.  Clone this directory and then use the commands:
+include("Path_TO_YOUR_CLONE/AFDM.jl")
+using AFDM
 
-On windows machines, in IJulia or the Forio IDE, you need to use linux style / slashes in the path, rather than the windows style \ slashes.  Once you've included the funciton pile,
+On windows machines, in IJulia or the Forio IDE, you need to use linux style / slashes in the path, rather than the windows style \ slashes. Or you need to use \\ instead of \.  Either works.  Once you've included the funciton pile,
 it gives you access to the following main functions:
 
 1. afd(xn,Nmax,Nz): Takes a one-dimensional time domain measurement xn, which is assumed (for now) to be sampled on an even time grid.  It will then iterate Nmax times over about Nz candidate poles within the unit disk.  It returns the Nmax poles and their amplitudes.
 2. reconstructTimeDomain(poles,amps,t): Takes a vector poles and their associated amplitudes and reconstructs the time domain signal at a requested time index t. t can be a float valued, which means that the reconstructed time domain signal allows you to interpolate between sampled time points.
+3. czt(xn,A,W,k): The chirp z transform, evaluating the z-transform of xn along a spiral starting at A and continuing every W^n thereafter for k points.
+4. UnitDiskGrid(Nz,delta): Produces about Nz points inside the unit disk, ranging from delta to 1-delta.
