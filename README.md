@@ -11,7 +11,7 @@ At the moment, what I have is a small pile of functions wrapped in a module.  Cl
 include("Path_TO_YOUR_CLONE/AFDM.jl")
 using AFDM
 
-On windows machines, in IJulia or the Forio IDE, you need to use linux style / slashes in the path, rather than the windows style \ slashes. Or you need to use \\ instead of \.  Either works.  Once you've included the funciton pile,
+On windows machines, in IJulia or the Forio IDE, you need to use linux style / slashes in the path, rather than the windows style \ slashes. Or you need to use double \ instead of \.  Either works.  Once you've included the funciton pile,
 it gives you access to the following main functions:
 
 1. afd(xn,Nmax,Nz): Takes a one-dimensional time domain measurement xn, which is assumed (for now) to be sampled on an even time grid.  It will then iterate Nmax times over about Nz candidate poles within the unit disk.  It returns the Nmax poles and their amplitudes.
