@@ -28,7 +28,7 @@ function czt(A::Complex128,W::Complex128,k::Int,xn::Vector{Complex128})
     return [gn[m+i-1]*vk[i] for i=1:k]
 end
 
-function zTransform(z::Complex128,xn::Vector{Complex128})
+function zTransformHorner(z::Complex128,xn::Vector{Complex128})
     #uses Horner's method
     x = one(Complex128)/z
     r = xn[end]
@@ -36,6 +36,16 @@ function zTransform(z::Complex128,xn::Vector{Complex128})
         r = r*x+xn[end-k+1]
     end
     return r*x
+end
+
+function zTransform(z::Complex128,xn::Vector{Complex128})
+    x = one(Complex128)/z
+    r = zero(Complex128)
+    for k=1:length(xn)
+        Z = x^k
+        r += xn[k]*Z
+    end
+    return r
 end
 
 function alphaj(a::Complex128)
@@ -204,7 +214,7 @@ end
 
 function afd(xn,Nmax,Nz)
     Nz = int(floor(sqrt(Nz)))
-    (Z,Q) = unitDiskGrid(Nz,0.05)
+    (Z,Q) = unitDiskGrid(Nz,0.005)
     L = length(Z)
     Gnm1 = zeros(Complex128,L)
     Gn   = zeros(Complex128,L)
@@ -224,6 +234,50 @@ function afd(xn,Nmax,Nz)
         polesList[i]=poleNm1
         polesAmps[i]=poleAmpNm1
         poleIndList[i] = poleIndNm1;
+        Gnm1 = Gn
+    end
+    return polesList, polesAmps
+end
+
+function afd_with_initial_poles(xn,pinit,Nmax,Nz)
+    Lpinit = length(pinit)
+    if Lpinit > Nmax
+        error("Nmax must be greater than the number of initial poles")
+    end
+    Nz = int(floor(sqrt(Nz)))
+    (Z,Q) = unitDiskGrid(Nz,0.1)
+    Ldisk = length(Z)
+    Z = vcat(Z,pinit)
+    Q = vcat(Q,1./conj(pinit))
+    L = Ldisk+Lpinit
+    Gnm1 = zeros(Complex128,L)
+    Gn   = zeros(Complex128,L)
+    O = zeros(Complex128,L)
+    polesList = zeros(Complex128,Nmax)
+    polesAmps = zeros(Complex128,Nmax)
+    poleIndList = zeros(Int64,Nmax)
+    g1!(Gnm1,z->zTransform(z,xn),Q)
+    poleAmpNm1 = innerProduct(Gnm1[Ldisk+1],pinit[1])
+    polesList[1] = pinit[1]
+    polesAmps[1] = poleAmpNm1
+    poleIndList[1] = Ldisk+1
+    for i=2:Lpinit
+        gNext!(Gn,Gnm1,pinit[i-1],poleAmpNm1,Q)
+        healG!(Gn,poleIndList,i-1)
+        poleAmpNm1 = innerProduct(Gnm1[Ldisk+i],pinit[1])
+        polesList[i]=pinit[i]
+        polesAmps[i]=poleAmpNm1
+        poleIndList[i] = Ldisk+i
+        Gnm1 = Gn
+    end
+    poleNm1 = pinit[end]
+    for i=(Lpinit+1):Nmax
+        gNext!(Gn,Gnm1,poleNm1,poleAmpNm1,Q)
+        healG!(Gn,poleIndList,i-1)
+        (poleNm1,poleAmpNm1,poleIndNm1) = innerProduct(Gn,Z)
+        polesList[i]=poleNm1
+        polesAmps[i]=poleAmpNm1
+        poleIndList[i] = poleIndNm1
         Gnm1 = Gn
     end
     return polesList, polesAmps
