@@ -16,7 +16,7 @@ function czt(A::Complex128,W::Complex128,k::Int,xn::Vector{Complex128})
     for i=1:(M+1)
         p = i-1
         t = W2^(p*p)
-        yn[i] = (p<m) ? xn[i]*t*A^p : zero(Complex128)
+        yn[i] = (p<m) ? xn[i]*t*A^(-p) : zero(Complex128)
         vk[i] = (p<k) ? t : zero(Complex128)
         vn[i+m-1] = (p<k) ? one(Complex128)/t : zero(Complex128)
         l = m-i+1
@@ -131,6 +131,7 @@ function g1!(G::Vector{Complex128},f::Function,Q::Vector{Complex128})
 end
 
 function g1czt!(G::Vector{Complex128},xn::Vector{Complex128},Q::Vector{Complex128})
+    zxn = vcat(zero(Complex128),xn)
     #Q is a collection of poles EXTERIOR to the unit disk
     lcol(i,l) = ((i-1)*l+i):((i-1)*l+((l+i-1)-2*(i-1)))
     rcol(i,l) = (((l-i)*l+((l+i-1)-2*(i-1)):-1:((l-i)*l+i)))
@@ -146,8 +147,8 @@ function g1czt!(G::Vector{Complex128},xn::Vector{Complex128},Q::Vector{Complex12
         side_len = l-2*(i-1)
         A = Q[ulCorner(i,l)]
         K = (4*(l-2*(i-1))-4)
-        W = exp(2*pi*im/K)
-        temp = czt(A,W,K,xn)
+        W = exp(-2*pi*im/K)
+        temp = czt(A,W,K,zxn)
         G[lcol(i,l)]=temp[1:side_len]
         G[brow(i,l)]=temp[(side_len+1):(2*(side_len-1))]
         G[rcol(i,l)]=temp[(2*side_len-1):(3*side_len-2)]
@@ -238,7 +239,7 @@ function akaikeInformationCriterion(RSS,numParams,dataLen)
     return dataLen*log(RSS/dataLen)+2*numParams+2*numParams*((numParams+1)/(dataLen-numParams-1))
 end
 
-function afd(xn::Vector{Complex128},Nmax::Int,Nz::Float64)
+function afd(xn::Vector{Complex128},Nmax::Int,Nz::Int)
     Nz = int(floor(sqrt(Nz)))
     (Z,Q) = unitDiskGrid(Nz,0.005)
     L = length(Z)
@@ -247,7 +248,7 @@ function afd(xn::Vector{Complex128},Nmax::Int,Nz::Float64)
     polesList = zeros(Complex128,Nmax);
     polesAmps = zeros(Complex128,Nmax);
     poleIndList = zeros(Int64,Nmax);
-    g1!(Gnm1,z->zTransform(z,xn),Q)
+    g1czt!(Gnm1,xn,Q)
     (poleNm1,poleAmpNm1,poleIndNm1) = innerProduct(Gnm1,Z)
     polesList[1] = poleNm1
     polesAmps[1] = poleAmpNm1
