@@ -125,10 +125,36 @@ function g1!(G::Vector{Complex128},f::Function,Q::Vector{Complex128})
     if length(Q)!=L
         error("input G vector must have same length as input Q vector")
     end
-    for i=1:length(G)
+    for i=1:L
         G[i] = f(Q[i])
     end
 end
+
+function g1czt!(G::Vector{Complex128},xn::Vector{Complex128},Q::Vector{Complex128})
+    #Q is a collection of poles EXTERIOR to the unit disk
+    lcol(i,l) = ((i-1)*l+i):((i-1)*l+((l+i-1)-2*(i-1)))
+    rcol(i,l) = (((l-i)*l+((l+i-1)-2*(i-1)):-1:((l-i)*l+i)))
+    brow(i,l) = (i*l+((l+i-1)-2*(i-1))):l:((l-i-1)*l+((l+i-1)-2*(i-1)))
+    trow(i,l) = ((l-i-1)*l+i):-l:(i*l+i)
+    L = length(G)
+    l = int(sqrt(L)) #L should be a perfect square, and l is a power of 2 by construction
+    if length(Q)!=L
+        error("input G vector must have same length as input Q vector")
+    end
+    ulCorner(i,l) = ((i-1)*l+i) #upper left corner
+    for i=1:int(l/2)
+        side_len = l-2*(i-1)
+        A = Q[ulCorner(i,l)]
+        K = (4*(l-2*(i-1))-4)
+        W = exp(2*pi*im/K)
+        temp = czt(A,W,K,xn)
+        G[lcol(i,l)]=temp[1:side_len]
+        G[brow(i,l)]=temp[(side_len+1):(2*(side_len-1))]
+        G[rcol(i,l)]=temp[(2*side_len-1):(3*side_len-2)]
+        G[trow(i,l)]=temp[(3*side_len-1):(4*(side_len-1))]
+    end
+end
+
 
 function gNext!(Gn::Vector{Complex128},Gnm1::Vector{Complex128},Anm1::Complex128,Onm1::Complex128,Q::Vector{Complex128})
     #this function modifies Gn, so returns nothing.
@@ -212,13 +238,12 @@ function akaikeInformationCriterion(RSS,numParams,dataLen)
     return dataLen*log(RSS/dataLen)+2*numParams+2*numParams*((numParams+1)/(dataLen-numParams-1))
 end
 
-function afd(xn,Nmax,Nz)
+function afd(xn::Vector{Complex128},Nmax::Int,Nz::Float64)
     Nz = int(floor(sqrt(Nz)))
     (Z,Q) = unitDiskGrid(Nz,0.005)
     L = length(Z)
     Gnm1 = zeros(Complex128,L)
     Gn   = zeros(Complex128,L)
-    O = zeros(Complex128,L)
     polesList = zeros(Complex128,Nmax);
     polesAmps = zeros(Complex128,Nmax);
     poleIndList = zeros(Int64,Nmax);
@@ -234,50 +259,6 @@ function afd(xn,Nmax,Nz)
         polesList[i]=poleNm1
         polesAmps[i]=poleAmpNm1
         poleIndList[i] = poleIndNm1;
-        Gnm1 = Gn
-    end
-    return polesList, polesAmps
-end
-
-function afd_with_initial_poles(xn,pinit,Nmax,Nz)
-    Lpinit = length(pinit)
-    if Lpinit > Nmax
-        error("Nmax must be greater than the number of initial poles")
-    end
-    Nz = int(floor(sqrt(Nz)))
-    (Z,Q) = unitDiskGrid(Nz,0.1)
-    Ldisk = length(Z)
-    Z = vcat(Z,pinit)
-    Q = vcat(Q,1./conj(pinit))
-    L = Ldisk+Lpinit
-    Gnm1 = zeros(Complex128,L)
-    Gn   = zeros(Complex128,L)
-    O = zeros(Complex128,L)
-    polesList = zeros(Complex128,Nmax)
-    polesAmps = zeros(Complex128,Nmax)
-    poleIndList = zeros(Int64,Nmax)
-    g1!(Gnm1,z->zTransform(z,xn),Q)
-    poleAmpNm1 = innerProduct(Gnm1[Ldisk+1],pinit[1])
-    polesList[1] = pinit[1]
-    polesAmps[1] = poleAmpNm1
-    poleIndList[1] = Ldisk+1
-    for i=2:Lpinit
-        gNext!(Gn,Gnm1,pinit[i-1],poleAmpNm1,Q)
-        healG!(Gn,poleIndList,i-1)
-        poleAmpNm1 = innerProduct(Gnm1[Ldisk+i],pinit[1])
-        polesList[i]=pinit[i]
-        polesAmps[i]=poleAmpNm1
-        poleIndList[i] = Ldisk+i
-        Gnm1 = Gn
-    end
-    poleNm1 = pinit[end]
-    for i=(Lpinit+1):Nmax
-        gNext!(Gn,Gnm1,poleNm1,poleAmpNm1,Q)
-        healG!(Gn,poleIndList,i-1)
-        (poleNm1,poleAmpNm1,poleIndNm1) = innerProduct(Gn,Z)
-        polesList[i]=poleNm1
-        polesAmps[i]=poleAmpNm1
-        poleIndList[i] = poleIndNm1
         Gnm1 = Gn
     end
     return polesList, polesAmps
