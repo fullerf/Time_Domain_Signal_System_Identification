@@ -5,7 +5,7 @@ function czt(A::Complex128,W::Complex128,k::Int,xn::Vector{Complex128})
     #yn: xn[n]*A^(-n)*W^(n^2/2), running from n = 0:(m-1), padded to L
     #vn: the inner filter W^(-n^2/2), running from n = (-m+1):(k-1), padded to L
     #vk: the outer product W^(m^2), running from m = 0:(k-1), padded to L
-    #t1, t2: temporary variables
+    #t : temporary variable
     m = length(xn)
     L = nextpow2(m+k-1)
     M = maximum([(m-1) (k-1)])
@@ -18,10 +18,13 @@ function czt(A::Complex128,W::Complex128,k::Int,xn::Vector{Complex128})
         t = W2^(p*p)
         yn[i] = (p<m) ? xn[i]*t*A^(-p) : zero(Complex128)
         vk[i] = (p<k) ? t : zero(Complex128)
-        vn[i+m-1] = (p<k) ? one(Complex128)/t : zero(Complex128)
-        l = m-i+1
-        if l>0
-            vn[l] = one(Complex128)/t
+        l1 = (i+m-1) 
+        if (l1<L)
+            vn[i+m-1] = (p<k) ? one(Complex128)/t : zero(Complex128)
+        end
+        l2 = m-i+1
+        if l2>0
+            vn[l2] = one(Complex128)/t
         end
     end
     gn = ifft(fft(vn).*fft(yn))
@@ -236,6 +239,8 @@ function residualSumOfSquares(model::Vector{Complex128},data::Vector{Complex128}
 end
 
 function akaikeInformationCriterion(RSS,numParams,dataLen)
+    #This gives the sample size corrected Akaike Information Criteria
+    #commonly known as AICc in the literature
     return dataLen*log(RSS/dataLen)+2*numParams+2*numParams*((numParams+1)/(dataLen-numParams-1))
 end
 
@@ -263,4 +268,23 @@ function afd(xn::Vector{Complex128},Nmax::Int,Nz::Int)
         Gnm1 = Gn
     end
     return polesList, polesAmps
+end
+
+function optimalAfdTruncation(poles::Vector{Complex128},amps::Vector{Complex128},xn::Vector{Complex128})
+    L = length(poles)
+    Nt = length(xn)
+    if length(amps)!=L
+        error("# of poles should be the same as number of amplitudes")
+    end
+    infVec = zeros(Float64,L)
+    for k=1:L
+        model = [reconstructTimeDomain(p[1:k],a[1:k],i)::Complex128 for i=linspace(1,Nt,Nt)]
+        rssval = residualSumOfSquares(model,xn)
+        # one complex value = 2 parameters, so each pole and amp is 4 parameters, each complex valued input
+        # is worth 2 data points of input in this thinking, thus:
+        infVec[k] = akaikeInformationCriterion(rssval,4*k,2*length(xn))
+    end
+    infMinInd = indmin(infVec)
+    aicVec = exp((-infVec+infVec[infMinInd])/2)
+    return indmax(aicVec)
 end
