@@ -86,3 +86,55 @@ function rrt(xn::Vector{Complex128},ul::Vector{Complex128},Z::Vector{Complex128}
     end
     return Spec
 end
+
+function xczt(xn::Vector{Complex128},A::Complex128,W::Complex128,K::Int,q::Float64)
+    N = length(xn)
+    Q = N*sum(abs(xn))
+    q = Q*q
+    Nul = minimum((N,100))
+    ul = [exp(im*2*pi/Nul)^(i-1) for i=1:Nul] #fourier basis for expanding Krylov operators U0,U1
+    Z = [A*W^(-(i-1)) for i=1:K] #this is the spiral the CZT is to be evaluated on
+    M = ifloor((N-2)/2)+1
+    (U0,U1,g0,g0_K,g0_NK) = generateU(ul,xn)
+    genR(z,U0,U1) = U0-U1/z
+    U0dagU0 = ctranspose(U0)*U0
+    U1dagU1 = ctranspose(U1)*U1
+    U1dagU0 = ctranspose(U1)*U0
+    U0dagU1 = ctranspose(U0)*U1
+    genRdagG0(R,g0) = ctranspose(R)*g0
+    genRdagR(z,U0dagU0,U1dagU1,U1dagU0,U0dagU1) = U0dagU0 + U1dagU1 -z*U1dagU0 - U0dagU1/z
+    Spec = zeros(Complex128,length(Z))
+    for k=1:length(Z)
+        R  = genR(Z[k],U0,U1)
+        RC2 = genRdagG0(R,g0_NK*Z[k]^(-N+M))
+        RR = genRdagR(Z[k],U0dagU0,U1dagU1,U1dagU0,U0dagU1)
+        Spec[k] = (transpose(g0_K*Z[k]^(-M))*(\((RR+q^2),RC2)))[1]
+    end
+    return Spec+czt(A,W,K,xn)
+end
+
+function rczt(xn::Vector{Complex128},A::Complex128,W::Complex128,K::Int,q::Float64)
+    N = length(xn)
+    Q = N*sum(abs(xn))
+    q = Q*q
+    Nul = minimum((N,100))
+    ul = [exp(im*2*pi/Nul)^(i-1) for i=1:Nul] #fourier basis for expanding Krylov operators U0,U1
+    Z = [A*W^(-(i-1)) for i=1:K] #this is the spiral the CZT is to be evaluated on
+    M = ifloor((N-2)/2)+1
+    (U0,U1,g0,g0_K,g0_NK) = generateU(ul,xn)
+    genR(z,U0,U1) = U0-U1/z
+    U0dagU0 = ctranspose(U0)*U0
+    U1dagU1 = ctranspose(U1)*U1
+    U1dagU0 = ctranspose(U1)*U0
+    U0dagU1 = ctranspose(U0)*U1
+    genRdagG0(R,g0) = ctranspose(R)*g0
+    genRdagR(z,U0dagU0,U1dagU1,U1dagU0,U0dagU1) = U0dagU0 + U1dagU1 -z*U1dagU0 - U0dagU1/z
+    Spec = zeros(Complex128,length(Z))
+    for k=1:length(Z)
+        R  = genR(Z[k],U0,U1)
+        RC = genRdagG0(R,g0)
+        RR = genRdagR(Z[k],U0dagU0,U1dagU1,U1dagU0,U0dagU1)
+        Spec[k] = (transpose(g0)*(\((RR+q^2),RC)))[1]
+    end
+    return Spec
+end
