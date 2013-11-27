@@ -228,7 +228,7 @@ function g1!(G::Vector{Complex128},f::Function,Q::Vector{Complex128})
     end
 end
 
-function g1czt!(G::Vector{Complex128},xn::Vector{Complex128},Q::Vector{Complex128},q::Float64)
+function g1czt!(G::Vector{Complex128},xn::Vector{Complex128},Q::Vector{Complex128})
     zxn = vcat(zero(Complex128),xn)
     #Q is a collection of poles EXTERIOR to the unit disk
     lcol(i,l) = ((i-1)*l+i):((i-1)*l+((l+i-1)-2*(i-1)))
@@ -246,12 +246,16 @@ function g1czt!(G::Vector{Complex128},xn::Vector{Complex128},Q::Vector{Complex12
         A = Q[ulCorner(i,l)]
         K = (4*(l-2*(i-1))-4)
         W = exp(-2*pi*im/K)
-        temp = xczt(zxn,A,W,K,q)
+        temp = czt(A,W,K,zxn)
         G[lcol(i,l)]=temp[1:side_len]
         G[brow(i,l)]=temp[(side_len+1):(2*(side_len-1))]
         G[rcol(i,l)]=temp[(2*side_len-1):(3*side_len-2)]
         G[trow(i,l)]=temp[(3*side_len-1):(4*(side_len-1))]
     end
+end
+
+function dictBlaschke(z::Complex128,a::Complex128)
+    return alphaj(a)/(1-conj(a)*z)
 end
 
 
@@ -266,7 +270,8 @@ function gNext!(Gn::Vector{Complex128},Gnm1::Vector{Complex128},Anm1::Complex128
         error("input gn vector must have same length as input z vector")
     end
     for i=1:L
-        Gn[i] = ((Gnm1[i] - Onm1*dictionaryElement(Q[i],Anm1))*invBlaschkeElement(Q[i],Anm1))
+        Gn[i] = (Gnm1[i]*invBlaschkeElement(Q[i],Anm1) - Onm1*dictBlaschke(Q[i],Anm1))
+        #Gn[i] = ((Gnm1[i] - Onm1*dictionaryElement(Q[i],Anm1))*invBlaschkeElement(Q[i],Anm1))
     end
 end
 
@@ -339,10 +344,38 @@ function akaikeInformationCriterion(RSS,numParams,dataLen)
     return dataLen*log(RSS/dataLen)+2*numParams+2*numParams*((numParams+1)/(dataLen-numParams-1))
 end
 
-function afd(xn::Vector{Complex128},Nmax::Int,Nz::Int,q::Float64)
+function afd(xn::Vector{Complex128},Nmax::Int,Nz::Int)
     Nz = int(floor(sqrt(Nz)))
     (Z,Q) = unitDiskGrid(Nz,0.005)
+    L = length(Z)
+    rNz = int(sqrt(L))
+    Gnm1 = zeros(Complex128,L)
+    Gn   = zeros(Complex128,L)
+    polesList = zeros(Complex128,Nmax)
+    polesAmps = zeros(Complex128,Nmax)
+    poleIndList = zeros(Int64,Nmax)
+    g1czt!(Gnm1,xn,Q)
+    (poleNm1,poleAmpNm1,poleIndNm1) = innerProduct(Gnm1,Z)
+    polesList[1] = poleNm1
+    polesAmps[1] = poleAmpNm1
+    poleIndList[1] = poleIndNm1
+    for i=2:Nmax
+        gNext!(Gn,Gnm1,poleNm1,poleAmpNm1,Q)
+        healG!(Gn,poleIndList,i-1)
+        (poleNm1,poleAmpNm1,poleIndNm1) = innerProduct(Gn,Z)
+        polesList[i]=poleNm1
+        polesAmps[i]=poleAmpNm1
+        poleIndList[i] = poleIndNm1
+        Gnm1 = Gn
+    end
+    return polesList, polesAmps
+end
 
+function xafd(xn::Vector{Complex128},Nmax::Int,Nz::Int,xN::Int,q::Float64)
+    Nz = int(floor(sqrt(Nz)))
+    (Z,Q) = unitDiskGrid(Nz,0.005)
+    #extrapolate the time domain using xczt to xN points
+    xhat = ifft(xczt(xn,one(Complex128),exp(-im*2*pi/xN),xN,q))
     L = length(Z)
     rNz = int(sqrt(L))
     Gnm1 = zeros(Complex128,L)
@@ -350,20 +383,14 @@ function afd(xn::Vector{Complex128},Nmax::Int,Nz::Int,q::Float64)
     polesList = zeros(Complex128,Nmax);
     polesAmps = zeros(Complex128,Nmax);
     poleIndList = zeros(Int64,Nmax);
-    g1czt!(Gnm1,xn,Q,q)
+    g1czt!(Gnm1,xhat,Q)
     (poleNm1,poleAmpNm1,poleIndNm1) = innerProduct(Gnm1,Z)
     polesList[1] = poleNm1
     polesAmps[1] = poleAmpNm1
     poleIndList[1] = poleIndNm1
-    Gm = reshape(Gnm1,(rNz,rNz))
-    figure()
-    contour(Gm,20)
     for i=2:Nmax
         gNext!(Gn,Gnm1,poleNm1,poleAmpNm1,Q)
         healG!(Gn,poleIndList,i-1)
-        Gm = reshape(Gn,(rNz,rNz))
-        figure()
-        contour(Gm,20)
         (poleNm1,poleAmpNm1,poleIndNm1) = innerProduct(Gn,Z)
         polesList[i]=poleNm1
         polesAmps[i]=poleAmpNm1
@@ -381,7 +408,7 @@ function optimalAfdTruncation(poles::Vector{Complex128},amps::Vector{Complex128}
     end
     infVec = zeros(Float64,L)
     for k=1:L
-        model = [reconstructTimeDomain(p[1:k],a[1:k],i)::Complex128 for i=linspace(1,Nt,Nt)]
+        model = [reconstructTimeDomain(poles[1:k],amps[1:k],i)::Complex128 for i=linspace(1,Nt,Nt)]
         rssval = residualSumOfSquares(model,xn)
         # one complex value = 2 parameters, so each pole and amp is 4 parameters, each complex valued input
         # is worth 2 data points of input in this thinking, thus:
