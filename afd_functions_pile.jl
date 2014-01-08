@@ -341,7 +341,8 @@ end
 function akaikeInformationCriterion(RSS,numParams,dataLen)
     #This gives the sample size corrected Akaike Information Criteria
     #commonly known as AICc in the literature
-    return dataLen*log(RSS/dataLen)+2*numParams+2*numParams*((numParams+1)/(dataLen-numParams-1))
+    K = numParams+1
+    return dataLen*log(RSS/dataLen)+2*K+2*K*((K+1)/(dataLen-K-1))
 end
 
 function afd(xn::Vector{Complex128},Nmax::Int,Nz::Int)
