@@ -38,7 +38,7 @@ function genBasis(N::Int,a::Vector{Complex128})
     B = ones(Complex128,(N,M))/sqrt(N)
     BstarOld = ones(Complex128,N)/sqrt(N)
     for k=2:M
-        (B[:,k],BstarNew) = PhiNext(z,a[k],a[k-1],B[:,k-1],BstarOld)
+        (B[:,k],BstarNew) = phiNext(z,a[k],a[k-1],B[:,k-1],BstarOld)
         BstarOld = BstarNew
     end
     return B
@@ -52,5 +52,16 @@ function genTBasis(N::Int,a::Vector{Complex128})
 end
 
 function genA(N::Int)
-	return rand(N).*exp(im*2*pi*rand(N))
+	return (rand(N)).*exp(im*2*pi*rand(N))
+end
+
+function compress2D(ay,ax,D)
+	(y,x) = size(D)
+	W = genBasis(y,ay)
+	T = genTBasis(x,ax)
+	return ((W'*(D*T)),W,T)
+end
+
+function uncompress2D(X,W,T)
+	return W*X*T'
 end
