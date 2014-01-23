@@ -24,15 +24,31 @@ function phiNext(z::Vector{Complex128},an::Complex128,anm1::Complex128,phinm1::V
         phin[k] = C*(PHI+conj(L)*PHISTAR)
         phinstar[k] = C*(L*PHI+PHISTAR)
     end
-    return (phin, phinstar)
+    return (phin, phinstar, L)
+end
+
+function phiNext(z::Vector{Complex128},an::Complex128,anm1::Complex128,phinm1::Vector{Complex128},phinm1star::Vector{Complex128},L::Complex128)
+    phin = zeros(Complex128,length(phinm1))
+    phinstar = zeros(Complex128,length(phinm1))
+    c = en(an,anm1,L)
+    for k=1:length(z)
+        q = (z[k]-anm1)
+        p = (one(Complex128)-conj(anm1)*z[k])
+        C = c/(z[k]-an)
+        PHI = p*phinm1[k]
+        PHISTAR = q*phinm1star[k]
+        phin[k] = C*(PHI+conj(L)*PHISTAR)
+        phinstar[k] = C*(L*PHI+PHISTAR)
+    end
+    return (phin, phinstar, L)
 end
 
 function genZ(N::Int)
 	return exp((im*2*pi/N)*[0:N-1])
 end
 
-function genZFractional(N::Int,F::Int)
-    return exp((im*2*pi/(N*F))*[0:N-1])
+function genZArc(N::Int,Div::Int)
+    return exp((im*2*pi/(Div*N))*[0:N-1])
 end
 
 function genBasis(N::Int,z::Vector,a::Vector{Complex128})
@@ -40,8 +56,21 @@ function genBasis(N::Int,z::Vector,a::Vector{Complex128})
     a = cat(1,zero(Complex128),a)
     B = ones(Complex128,(N,M))/sqrt(N)
     BstarOld = ones(Complex128,N)/sqrt(N)
+    Lk = zeros(Complex128,M-1)
     for k=2:M
-        (B[:,k],BstarNew) = phiNext(z,a[k],a[k-1],B[:,k-1],BstarOld)
+        (B[:,k],BstarNew,Lk[k-1]) = phiNext(z,a[k],a[k-1],B[:,k-1],BstarOld)
+        BstarOld = copy(BstarNew)
+    end
+    return (B[:,2:end],Lk)
+end
+
+function genBasis(N::Int,z::Vector,a::Vector{Complex128},Lk::Vector{Complex128},InitVal)
+    M = length(a)+1
+    a = cat(1,zero(Complex128),a)
+    B = ones(Complex128,(N,M))*InitVal
+    BstarOld = ones(Complex128,N)*InitVal
+    for k=2:M
+        (B[:,k],BstarNew) = phiNext(z,a[k],a[k-1],B[:,k-1],BstarOld,Lk[k-1])
         BstarOld = copy(BstarNew)
     end
     return B[:,2:end]
@@ -55,7 +84,7 @@ end
 
 function genTBasis(N::Int,a::Vector{Complex128})
     z = genZ(N)
-	B = genBasis(N,z,a)
+	(B,L) = genBasis(N,z,a)
 	T = fft(B,1)/sqrt(N)
     T = flipud(T)
     return T
@@ -119,7 +148,9 @@ function ompTMTimeDomain(D::Array{Complex128,2},Z::Vector{Complex128},Npoles::In
     M = length(Z)
     z = genZ(N)
     B = zeros(Complex128,(N,M))
-    Bstar = zeros(Complex128,(N,M))
+    Bstar = zeros(Complex128,(Npoles,M))
+    Ltemp = zeros(Complex128,M)
+    Lopt = zeros(Complex128,Npoles)
     Bnm1 = ones(Complex128,(N,M))/sqrt(N)
     Bstarnm1 = ones(Complex128,(N,M))/sqrt(N)
     poles = zeros(Complex128,Npoles+1)
@@ -128,7 +159,7 @@ function ompTMTimeDomain(D::Array{Complex128,2},Z::Vector{Complex128},Npoles::In
     R = copy(D)
     for k=2:(Npoles+1)
         for j=1:M
-            (B[:,j],Bstar[:,j]) = phiNext(z,Z[j],poles[k-1],Bnm1[:,jopt[k-1]],Bstarnm1[:,jopt[k-1]])
+            (B[:,j],Bstar[:,j],Ltemp[j]) = phiNext(z,Z[j],poles[k-1],Bnm1[:,jopt[k-1]],Bstarnm1[:,jopt[k-1]])
         end
         Bnm1 = copy(B)
         Bstarnm1 = copy(Bstar)
@@ -140,8 +171,10 @@ function ompTMTimeDomain(D::Array{Complex128,2},Z::Vector{Complex128},Npoles::In
         poles[k] = Z[jopt[k]]
         amps[k,:] = P[jopt[k],:]
         R -= B[:,jopt[k]]*amps[k,:]
+        println(Ltemp[jopt[k]])
+        Lopt[k-1] = Ltemp[jopt[k]]
     end
-    return (poles[2:end], amps[2:end,:])
+    return (poles[2:end], amps[2:end,:], Lopt)
 end
 
 function ompSepTMDecomp(Npoles::Int,Nsing::Int,Ngrid::Int,Ntarget::Int,D::Array{Complex128,2})
@@ -150,9 +183,9 @@ function ompSepTMDecomp(Npoles::Int,Nsing::Int,Ngrid::Int,Ntarget::Int,D::Array{
     sp = s[1:Nsing]
     up  = u[:,1:Nsing]
     Z = unitDiskGrid(int(floor(sqrt(Ngrid))),0.001)
-    (polesx,ampsx) = ompTMTimeDomain(vp,Z,Npoles,0)
+    (polesx,ampsx,Lk) = ompTMTimeDomain(vp,Z,Npoles,0)
     Bx = genTBasis(Ntarget,polesx)
     R = up*diagm(sp)*(Bx*ampsx)'
-    return (polesx,ampsx,R)
+    return (polesx,ampsx,R,Lk)
 end
 
