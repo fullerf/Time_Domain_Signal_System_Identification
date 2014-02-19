@@ -43,6 +43,28 @@ function phiNext(z::Vector{Complex128},an::Complex128,anm1::Complex128,phinm1::V
     return (phin, phinstar, L)
 end
 
+function blaschkeProd(z::Vector{Complex128},aj::Vector{Complex128})
+    r = ones(Complex128,length(z))
+    for i=1:length(aj)
+        t = [(1-conj(aj[i])*z[k])./(z[k]-aj[i]) for k=1:length(z)]
+        r = r.*t
+    end
+    return r
+end
+
+function qrUpdate(z::Vector{Complex128},p::Vector{Complex128},B::Array{Complex128,2},Bstar::Array{Complex128,2})
+    (L,C) = size(B)
+    (Q,R) = qr(B)
+    Lk = zeros(Complex128,C-1)
+    Bnew = copy(Q)
+    BstarNew = zeros(Complex128,(L,C))
+    for k=2:C
+        BstarNew[:,k] = conj(Bnew[:,k]).*blaschkeProd(z,[p[1:k]])
+        Lk[k-1] = ln(z,p[k],p[k-1],Bnew[:,k-1],BstarNew[:,k-1])
+    end
+    return (Bnew[:,2:end],BstarNew[:,2:end],Lk)
+end
+
 function genZ(N::Int)
 	return exp((im*2*pi/N)*[0:N-1])
 end
@@ -53,15 +75,21 @@ end
 
 function genBasis(N::Int,z::Vector,a::Vector{Complex128})
     M = length(a)+1
+    upfreq = 5;
     a = cat(1,zero(Complex128),a)
     B = ones(Complex128,(N,M))/sqrt(N)
-    BstarOld = ones(Complex128,N)/sqrt(N)
+    Bstar = ones(Complex128,(N,M))/sqrt(N)
+    #BstarOld = ones(Complex128,N)/sqrt(N)
     Lk = zeros(Complex128,M-1)
     for k=2:M
-        (B[:,k],BstarNew,Lk[k-1]) = phiNext(z,a[k],a[k-1],B[:,k-1],BstarOld)
-        BstarOld = copy(BstarNew)
+        (B[:,k],Bstar[:,k],Lk[k-1]) = phiNext(z,a[k],a[k-1],B[:,k-1],Bstar[:,k-1])
+        #(B[:,k],BstarNew,Lk[k-1]) = phiNext(z,a[k],a[k-1],B[:,k-1],BstarOld)
+        #BstarOld = copy(BstarNew)
+        if mod(k+1,upfreq)==0
+            (B[:,(k-upfreq+1):k],Bstar[:,(k-upfreq+1):k],Lk[(k-upfreq+1):k]) = qrUpdate(z,a,B[:,(k-upfreq):k],Bstar[:,(k-upfreq):k])
+        end
     end
-    return (B[:,2:end],Lk)
+    return (B[:,2:end],Lk,Bstar[:,2:end])
 end
 
 function genBasis(N::Int,z::Vector,a::Vector{Complex128},Lk::Vector{Complex128},InitVal)
