@@ -10,6 +10,62 @@ function ln(z::Vector{Complex128},an::Complex128,anm1::Complex128,phinm1::Vector
     return -num/den
 end
 
+function ln(z::Vector{Complex128},a::Vector{Complex128},phinm1::Vector{Complex128})
+    if length(a)==1
+        an = copy(a[end])
+        anm1 = zero(Complex128)
+        phinm1star = phinm1
+        f1 = [((z[i]-anm1)/(one(Complex128)-conj(an)*z[i]))*conj(phinm1[i]) for i=1:length(z)]
+        f2 = [((one(Complex128)-conj(anm1)*z[i])/(one(Complex128)-conj(an)*z[i]))*phinm1star[i] for i=1:length(z)]
+        num = sum(f1)
+        den = sum(f2)
+        r = -num/den
+    else
+        an = a[end]
+        anm1 = a[end-1]
+        bProd = length(a)>3 ? blaschkeProd(z,a[end-2]) : ones(Complex128,length(z))
+        phinm1star = [phinm1[i]*bProd[i] for i=1:length(z)]
+        f1 = [((z[i]-anm1)/(one(Complex128)-conj(an)*z[i]))*conj(phinm1[i]) for i=1:length(z)]
+        f2 = [((z[i]-anm1)/(one(Complex128)-conj(an)*z[i]))*phinm1star for i=1:length(z)]
+        num = sum(f1)
+        den = sum(f2)
+        r = -num/den
+    end
+    return r
+end
+
+function phiNext(z::Vector{Complex128},a::Vector{Complex128},phinm1::Vector{Complex128})
+    phin = zeros(Complex128,length(phinm1))
+    if length(a)==1
+        an = copy(a[end])
+        anm1 = zero(Complex128)
+        L = ln(z,a,phinm1)
+        c = en(an,anm1,L)
+        for k=1:length(z)
+            q = (z[k]-anm1)
+            p = (one(Complex128)-conj(anm1)*z[k])
+            C = c/(z[k]-an)
+            PHI = p*phinm1[k]
+            PHISTAR = q*phinm1[k]
+            phin[k] = C*(PHI+conj(L)*PHISTAR)
+        end
+    else
+        an = a[end]
+        anm1 = a[end-1]
+        L = ln(z,a,phinm1)
+        c = en(an,anm1,L)
+        bProd = length(a)>3 ? blaschkeProd(z,a[end-2]) : ones(Complex128,length(z))
+        for k=1:length(z)
+            q = (z[k]-an)
+            p = (one(Complex128)-conj(anm1)*z[k])
+            C = c*p/q
+            phin[k] = C*(phinm1[k]+conj(L)*bProd[k]*conj(phinm1[k]))
+        end
+    end
+    return (phin, L)
+end
+
+
 function phiNext(z::Vector{Complex128},an::Complex128,anm1::Complex128,phinm1::Vector{Complex128},phinm1star::Vector{Complex128})
     phin = zeros(Complex128,length(phinm1))
     phinstar = zeros(Complex128,length(phinm1))
@@ -46,7 +102,16 @@ end
 function blaschkeProd(z::Vector{Complex128},aj::Vector{Complex128})
     r = ones(Complex128,length(z))
     for i=1:length(aj)
-        t = [(1-conj(aj[i])*z[k])./(z[k]-aj[i]) for k=1:length(z)]
+        t = [(one(Complex128)-conj(aj[i])*z[k])./(z[k]-aj[i]) for k=1:length(z)]
+        r = r.*t
+    end
+    return r
+end
+
+function conjBlaschkeProd(z::Vector{Complex128},aj::Vector{Complex128})
+    r = ones(Complex128,length(z))
+    for i=1:length(aj)
+        t = [(z[k]-aj[i])/(one(Complex128)-conj(aj[i])*z[k]) for k=1:length(z)]
         r = r.*t
     end
     return r
@@ -75,7 +140,7 @@ end
 
 function genBasis(N::Int,z::Vector,a::Vector{Complex128})
     M = length(a)+1
-    upfreq = 5;
+    upfreq = 500;
     a = cat(1,zero(Complex128),a)
     B = ones(Complex128,(N,M))/sqrt(N)
     Bstar = ones(Complex128,(N,M))/sqrt(N)
@@ -86,6 +151,7 @@ function genBasis(N::Int,z::Vector,a::Vector{Complex128})
         #(B[:,k],BstarNew,Lk[k-1]) = phiNext(z,a[k],a[k-1],B[:,k-1],BstarOld)
         #BstarOld = copy(BstarNew)
         if mod(k+1,upfreq)==0
+            println("QR updating")
             (B[:,(k-upfreq+1):k],Bstar[:,(k-upfreq+1):k],Lk[(k-upfreq+1):k]) = qrUpdate(z,a,B[:,(k-upfreq):k],Bstar[:,(k-upfreq):k])
         end
     end
