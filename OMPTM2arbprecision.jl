@@ -25,6 +25,37 @@ function ln(z::Vector{ComplexPair{BigFloat}},a::Vector{ComplexPair{BigFloat}},ph
     return r
 end
 
+function phiNext(z::Vector{ComplexPair{BigFloat}},a::ComplexPair{BigFloat},phinm1::Vector{ComplexPair{BigFloat}},firstpole::Bool)
+    phin = zeros(ComplexPair{BigFloat},length(phinm1))
+    if firstpole
+        an = copy(a[end])
+        anm1 = zero(ComplexPair{BigFloat})
+        L = ln(z,a,phinm1)
+        c = en(an,anm1,L)
+        for k=1:length(z)
+            q = (z[k]-anm1)
+            p = (one(ComplexPair{BigFloat})-conj(anm1)*z[k])
+            C = c/(z[k]-an)
+            PHI = p*phinm1[k]
+            PHISTAR = q*phinm1[k]
+            phin[k] = C*(PHI+conj(L)*PHISTAR)
+        end
+    else
+        an = a[end]
+        anm1 = a[end-1]
+        L = ln(z,a,phinm1)
+        c = en(an,anm1,L)
+        bProd = length(a)>=3 ? blaschkeProd(z,[a[1:end-2]]) : ones(ComplexPair{BigFloat},length(z))
+        for k=1:length(z)
+            q = (z[k]-an)
+            p = (one(ComplexPair{BigFloat})-conj(anm1)*z[k])
+            C = c*p/q
+            phin[k] = C*(phinm1[k]+conj(L)*bProd[k]*conj(phinm1[k]))
+        end
+    end
+    return (phin, L)
+end
+
 function phiNext(z::Vector{ComplexPair{BigFloat}},a::Vector{ComplexPair{BigFloat}},phinm1::Vector{ComplexPair{BigFloat}})
     phin = zeros(ComplexPair{BigFloat},length(phinm1))
     if length(a)==1
@@ -103,12 +134,12 @@ function conjBlaschkeProd(z::Vector{ComplexPair{BigFloat}},aj::Vector{ComplexPai
     return r
 end
 
-function genZ(N::Int)
-	return exp((im*2*pi/N)*[0:N-1])
+function genZArb(N::Int)
+	return exp(convert(ComplexPair{BigFloat},(im*2*pi/N))*[0:(N-1)])
 end
 
 function genZArcArb(N::Int,Div::Int)
-    return exp(convert(ComplexPair{BigFloat},(im*2*pi/(Div*N)))*[0:N-1])
+    return exp(convert(ComplexPair{BigFloat},(im*2*pi/(Div*N)))*[0:(N-1)])
 end
 
 function genBasis(z::Vector,a::Vector{ComplexPair{BigFloat}})
