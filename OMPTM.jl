@@ -21,12 +21,11 @@ function ln(z::Vector{Complex128},a::Vector{Complex128},phinm1::Vector{Complex12
         den = sum(f2)
         r = -num/den
     else
-        an = a[end]
-        anm1 = a[end-1]
-        bProd = length(a)>3 ? blaschkeProd(z,a[end-2]) : ones(Complex128,length(z))
-        phinm1star = [phinm1[i]*bProd[i] for i=1:length(z)]
+        an = copy(a[end])
+        anm1 = copy(a[end-1])
+        bProd = length(a)>=3 ? conjBlaschkeProd(z,[a[1:end-2]]) : ones(Complex128,length(z))
         f1 = [((z[i]-anm1)/(one(Complex128)-conj(an)*z[i]))*conj(phinm1[i]) for i=1:length(z)]
-        f2 = [((z[i]-anm1)/(one(Complex128)-conj(an)*z[i]))*phinm1star for i=1:length(z)]
+        f2 = [((z[i]-anm1)/(one(Complex128)-conj(an)*z[i]))*phinm1[i]*bProd[i] for i=1:length(z)]
         num = sum(f1)
         den = sum(f2)
         r = -num/den
@@ -54,7 +53,7 @@ function phiNext(z::Vector{Complex128},a::Vector{Complex128},phinm1::Vector{Comp
         anm1 = a[end-1]
         L = ln(z,a,phinm1)
         c = en(an,anm1,L)
-        bProd = length(a)>3 ? blaschkeProd(z,a[end-2]) : ones(Complex128,length(z))
+        bProd = length(a)>=3 ? blaschkeProd(z,[a[1:end-2]]) : ones(Complex128,length(z))
         for k=1:length(z)
             q = (z[k]-an)
             p = (one(Complex128)-conj(anm1)*z[k])
