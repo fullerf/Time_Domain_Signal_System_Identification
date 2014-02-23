@@ -104,12 +104,17 @@ function conjBlaschkeProd(z::Vector{ComplexPair{BigFloat}},aj::Vector{ComplexPai
 end
 
 function genZArb(N::Int)
-	return exp(convert(ComplexPair{BigFloat},(im*2*pi/N))*[0:(N-1)])
+	return exp(convert(Vector{ComplexPair{BigFloat}},im*linspace2(0.0,2*pi,N)))
 end
 
 function genZArcArb(N::Int,Div::Int)
-    return exp(convert(ComplexPair{BigFloat},(im*2*pi/(Div*N)))*[0:(N-1)])
+    return exp(convert(Vector{ComplexPair{BigFloat}},im*linspace(0.0,2*pi/Div,N)))
 end
+
+function genZArbUpSample(N::Int,Mult::Int)
+    return exp(convert(Vector{ComplexPair{BigFloat}},im*linspace2upsample(0.0,2*pi,N,Mult)))
+end
+
 
 function genBasis(z::Vector,a::Vector{ComplexPair{BigFloat}})
     P = zeros(ComplexPair{BigFloat},(length(z),length(a)+1))
@@ -118,7 +123,7 @@ function genBasis(z::Vector,a::Vector{ComplexPair{BigFloat}})
     for k=1:length(a)
         (P[:,k+1],L[k]) = phiNext(z,[a[1:k]],P[:,k])
     end
-    return (P[:,2:end],L)
+    return (P,L)
 end
 
 function genBasisGivenL(z::Vector{ComplexPair{BigFloat}},a::Vector{ComplexPair{BigFloat}},L::Vector{ComplexPair{BigFloat}},N::Int)
@@ -127,7 +132,7 @@ function genBasisGivenL(z::Vector{ComplexPair{BigFloat}},a::Vector{ComplexPair{B
     for k=1:length(a)
         P[:,k+1] = phiNext(z,[a[1:k]],P[:,k],L[k])
     end
-    return P[:,2:end]
+    return P
 end
 
 

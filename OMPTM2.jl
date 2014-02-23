@@ -104,12 +104,33 @@ function conjBlaschkeProd(z::Vector{Complex128},aj::Vector{Complex128})
     return r
 end
 
+function linspace2(s,e,n::Int)
+    #this produces a linear spacing between
+    #s and e, such that n total elements are
+    #in the vector, but the last element
+    #is e - spacing, rather than e, like in
+    #the normal linspace function
+    return [s:((e-s)/(n)):(e-((e-s)/(n)))]
+end
+
+function linspace2upsample(s,e,n::Int,m::Int)
+    #this function upsamples what linspace2 would
+    #return, such that the two vectors share the same
+    #points at integer values of the spacing defined
+    #by linspace2: (e-s)/m
+    return [s:((e-s)/(n*m)):(e-((e-s)/(n*m)))]
+end
+
 function genZ(N::Int)
-	return exp((im*2*pi/N)*[0:(N-1)])
+	return exp(im*linspace2(0.0,2*pi,N))
 end
 
 function genZArc(N::Int,Div::Int)
-    return exp((im*2*pi/(Div*N))*[0:(N-1)])
+    return exp(im*linspace2(0.0,2*pi,N))
+end
+
+function genZUpSample(N::Int,Mult::Int)
+    return exp(im*linspace2upsample(0.0,2*pi,N,Mult))
 end
 
 function genBasis(z::Vector,a::Vector{Complex128})
@@ -119,7 +140,7 @@ function genBasis(z::Vector,a::Vector{Complex128})
     for k=1:length(a)
         (P[:,k+1],L[k]) = phiNext(z,[a[1:k]],P[:,k])
     end
-    return (P[:,2:end],L)
+    return (P,L)
 end
 
 function genBasisGivenL(z::Vector,a::Vector{Complex128},L::Vector{Complex128},N::Int)
@@ -128,5 +149,6 @@ function genBasisGivenL(z::Vector,a::Vector{Complex128},L::Vector{Complex128},N:
     for k=1:length(a)
         P[:,k+1] = phiNext(z,[a[1:k]],P[:,k],L[k])
     end
-    return P[:,2:end]
+    return P
 end
+
