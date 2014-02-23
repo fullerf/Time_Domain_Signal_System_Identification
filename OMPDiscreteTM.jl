@@ -51,18 +51,19 @@ function OMPTimeDomain(V::Array{Complex128,2},Precision::Int64,OrthoTol::Float64
 			#terminate the fit if we lose orthogonality when operating at double precision
 			terminate_fit = 2; 
 		end
-		Tdbl = ifft(Bdbl[:,2:k+1],1)*sqrt(L)
+		Tdbl = ifft(Bdbl[:,1:k+1],1)*sqrt(L)
 		Resid = V-Tdbl*Tdbl'*V
 		RSS[k] = norm(Resid)
-		AICc[k] = akaikeInformationCriterion(RSS[k],2*k+1,2*L*size(V,2))
+		#We have L-1 actual data points per column x size(V,2) columns, 2 numbers per element
+		#And we have 2 parameters per pole, +1 for the variance estimate.
+		AICc[k] = akaikeInformationCriterion(RSS[k],2*k+1,2*(L-1)*size(V,2))
 		if k==(N-1)
 			terminate_fit = 1
 		end
 	end
-    optind = indmin(AICc)
-    Tdbl = ifft(Bdbl[:,2:k+1],1)*sqrt(L)
-    A = Tdbl[:,1:(optind)]'*V
-	return (zarb,parb,Larb,A,terminate_fit)
+    Tdbl = ifft(Bdbl[:,1:k+1],1)*sqrt(L)
+    A = Tdbl[:,1:(k+1)]'*V
+	return (zarb,parb,Larb,A,AICc,terminate_fit)
 end
 
 function akaikeInformationCriterion(RSS,numParams,dataLen)
