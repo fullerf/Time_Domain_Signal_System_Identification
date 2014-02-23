@@ -25,37 +25,6 @@ function ln(z::Vector{Complex128},a::Vector{Complex128},phinm1::Vector{Complex12
     return r
 end
 
-function phiNext(z::Vector{Complex128},a::Complex128,phinm1::Vector{Complex128},firstpole::Bool)
-    phin = zeros(Complex128,length(phinm1))
-    if firstpole
-        an = copy(a[end])
-        anm1 = zero(Complex128)
-        L = ln(z,a,phinm1)
-        c = en(an,anm1,L)
-        for k=1:length(z)
-            q = (z[k]-anm1)
-            p = (one(Complex128)-conj(anm1)*z[k])
-            C = c/(z[k]-an)
-            PHI = p*phinm1[k]
-            PHISTAR = q*phinm1[k]
-            phin[k] = C*(PHI+conj(L)*PHISTAR)
-        end
-    else
-        an = a[end]
-        anm1 = a[end-1]
-        L = ln(z,a,phinm1)
-        c = en(an,anm1,L)
-        bProd = length(a)>=3 ? blaschkeProd(z,[a[1:end-2]]) : ones(Complex128,length(z))
-        for k=1:length(z)
-            q = (z[k]-an)
-            p = (one(Complex128)-conj(anm1)*z[k])
-            C = c*p/q
-            phin[k] = C*(phinm1[k]+conj(L)*bProd[k]*conj(phinm1[k]))
-        end
-    end
-    return (phin, L)
-end
-
 
 function phiNext(z::Vector{Complex128},a::Vector{Complex128},phinm1::Vector{Complex128})
     phin = zeros(Complex128,length(phinm1))
