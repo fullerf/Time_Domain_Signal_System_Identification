@@ -37,7 +37,6 @@ function OMPTimeDomain(V::Array{Complex128,2},Precision::Int64,OrthoTol::Float64
 			anm1 = [pdbl[k-1]]
 		end
 		Bnm1 = convert(Vector{Complex128},B[:,k])
-		println(k)
 		max_objective!(opt,(x,g)->ompObj(x,g,zdbl,anm1,Bnm1,Resid))
 		beta0 = genStart(betalb,betaub)
 		(oVal,betaOpt,exitcode) = optimize(opt,beta0)
@@ -90,4 +89,13 @@ function ompObj(beta::Vector,grad::Vector,z::Vector{Complex128},anm1::Vector{Com
     Tn = ifft(Bn,1)*sqrt(length(z))
     Proj = Tn'*D;
     return sum(abs(Proj),2)[1]
+end
+
+function createFreqAxis(N::Int,dT)
+	#For some time data with index values 0:(N-1) this function creates the corresponding frequency axis
+	#in units of 1/time spacing
+    fs = 1/dT
+    df = fs/N
+    f = [0:df:(fs-df)] - (fs-mod(N,2)*df)/2
+    return f
 end
