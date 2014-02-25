@@ -40,12 +40,14 @@ function OMPTimeDomain(V::Array{Complex128,2},Precision::Int64,OrthoTol::Float64
 		max_objective!(opt,(x,g)->ompObj(x,g,zdbl,anm1,Bnm1,Resid))
 		beta0 = genStart(betalb,betaub)
 		(oVal,betaOpt,exitcode) = optimize(opt,beta0)
+		println(oVal)
 		parb[k] = convert(ComplexPair{BigFloat},betaOpt[1]*exp(im*betaOpt[2]))
 		pdbl[k] = convert(Complex128,parb[k])
 		(Bnext,Ldbl[k]) = phiNext(zdbl,[pdbl[1:k]],Bnm1)
 		(B[:,k+1],Larb[k]) = phiNext(zarb,[parb[1:k]],B[:,k])
 		Bdbl[:,k+1] = convert(Vector{Complex128},B[:,k+1])
 		OrthogonalityMetric = maximum(abs(abs(Bnext'*Bdbl[:,1:k+1]) - cat(1,zeros(Float64,k),one(Float64))'))
+		println(OrthogonalityMetric)
 		if OrthogonalityMetric>OrthoTol
 			#terminate the fit if we lose orthogonality when operating at double precision
 			terminate_fit = 2; 
@@ -54,8 +56,8 @@ function OMPTimeDomain(V::Array{Complex128,2},Precision::Int64,OrthoTol::Float64
 		Resid = V-Tdbl*Tdbl'*V
 		RSS[k] = norm(Resid)
 		#We have L-1 actual data points per column x size(V,2) columns, 2 numbers per element
-		#And we have 2 parameters per pole, +1 for the variance estimate.
-		AICc[k] = akaikeInformationCriterion(RSS[k],2*k+1,2*(L-1)*size(V,2))
+		#And we have 2 parameters per pole, +1 for the variance estimate, plus 2 per linear coefficient
+		AICc[k] = akaikeInformationCriterion(RSS[k],2*k+1+2*k*size(V,2),2*size(V,2)*(size(V,1)-1))
 		if k==(N-1)
 			terminate_fit = 1
 		end
@@ -63,6 +65,12 @@ function OMPTimeDomain(V::Array{Complex128,2},Precision::Int64,OrthoTol::Float64
     Tdbl = ifft(Bdbl[:,1:k+1],1)*sqrt(L)
     A = Tdbl[:,1:(k+1)]'*V
 	return (zarb,parb,Larb,A,AICc,terminate_fit)
+end
+
+function OMPTimeDomainIndPoles(V::Array{Complex128,2},Precision::Int64,OrthoTol::Float64,gmethod,lmethod,ltol,gWallClockTime)
+	for j=1:size(V,2)
+		OMPTimeDomain(V,Precision,OrthoTol,gmethod,lmethod,ltol,gWallClockTime)
+	end
 end
 
 function akaikeInformationCriterion(RSS,numParams,dataLen)
