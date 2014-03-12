@@ -52,10 +52,11 @@ function filterR(p::Complex128,R::Vector)
     return Rkp1[2:end]
 end
 
-function dictObj(x,g,target::Vector)
+function dictObj(x,g,target)
     p = x[1]*exp(im*2*pi*x[2])
-    trial = dictElem(p,length(target))
-    return abs2(dot(trial,target))
+    trial = dictElem(p,size(target,1))
+    r = sum(abs2(trial'*target),2)
+    return r[1]
 end
 
 function unitDiskGrid(n::Int,delta::Float64)
@@ -104,6 +105,48 @@ function afdT(target::Vector,Npoles::Int,Nstarts::Int)
         gk = filterR(p[j],(gk-a[j]*ep))
     end
     return (p,a)
+end
+
+function afdTglobal(target::Array,Npoles::Int,Nstarts::Int)
+    Z = unitDiskGrid(int(sqrt(Nstarts)),0.2)
+    opt = Opt(:LN_SBPLX,2)
+    ftol_rel!(opt,1e-6) #local stopping criteria
+    lb = [0.01; 0]
+    ub = [0.95; 1-eps(Float64)]
+    lower_bounds!(opt,lb)
+    upper_bounds!(opt,ub)
+    avec = zeros(Complex128,(length(Z),2))
+    ovec = zeros(Float64,length(Z))
+    p = zeros(Complex128,Npoles)
+    a = zeros(Complex128,(Npoles,size(target,2)))
+    gk = copy(target)
+    for j=1:Npoles
+        max_objective!(opt,(x,g)->dictObj(x,g,gk)[1])
+        for k=1:length(Z)
+            beta0 = [abs(Z[k]); ((angle(Z[k])+pi)/(2*pi))]
+            (ovec[k],avec[k,:],e) = optimize(opt,beta0)
+        end
+
+        aopt = avec[indmax(ovec),:]
+        p[j] = aopt[1]*exp(im*2*pi*aopt[2])
+        ep = dictElem(p[j],size(target,1))
+        a[j,:] = ep'*gk
+        for i=1:size(target,2)
+            gk[:,i] = filterR(p[j],(gk[:,i]-a[j,i]*ep))
+        end
+    end
+    return (p,a)
+end
+
+function akaikeInformationCriterion(RSS,numParams,dataLen)
+    #This gives the sample size corrected Akaike Information Criteria
+    #commonly known as AICc in the literature
+    K = numParams+1
+    return dataLen*log(RSS/dataLen)+2*K+2*K*((K+1)/(dataLen-K-1))
+end
+
+function processCompressedSensingBatch(D::Array{Complex128,2},Ntau::Int,Npmax::Int)
+
 end
 
 function optimalAfdTruncation(poles::Vector{Complex128},amps::Vector{Complex128},xn::Vector{Complex128})
