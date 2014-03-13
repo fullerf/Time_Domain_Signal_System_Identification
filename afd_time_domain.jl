@@ -79,35 +79,7 @@ function unitDiskGrid(n::Int,delta::Float64)
     return reshape(Zjk,N^2)
 end
 
-function afdT(target::Vector,Npoles::Int,Nstarts::Int)
-    Z = unitDiskGrid(int(sqrt(Nstarts)),0.2)
-    opt = Opt(:LN_SBPLX,2)
-    ftol_rel!(opt,1e-6) #local stopping criteria
-    lb = [0.01; 0]
-    ub = [0.95; 1-eps(Float64)]
-    lower_bounds!(opt,lb)
-    upper_bounds!(opt,ub)
-    avec = zeros(Complex128,(length(Z),2))
-    ovec = zeros(Float64,length(Z))
-    p = zeros(Complex128,Npoles)
-    a = zeros(Complex128,Npoles)
-    gk = copy(target)
-    for j=1:Npoles
-        max_objective!(opt,(x,g)->dictObj(x,g,gk))
-        for k=1:length(Z)
-            beta0 = [abs(Z[k]); ((angle(Z[k])+pi)/(2*pi))]
-            (ovec[k],avec[k,:],e) = optimize(opt,beta0)
-        end
-        aopt = avec[indmax(ovec),:]
-        p[j] = aopt[1]*exp(im*2*pi*aopt[2])
-        ep = dictElem(p[j],length(target))
-        a[j] = dot(ep,gk)
-        gk = filterR(p[j],(gk-a[j]*ep))
-    end
-    return (p,a)
-end
-
-function afdTglobal(target::Array,Npoles::Int,Nstarts::Int)
+function afdT(target::Array,Npoles::Int,Nstarts::Int)
     Z = unitDiskGrid(int(sqrt(Nstarts)),0.2)
     opt = Opt(:LN_SBPLX,2)
     ftol_rel!(opt,1e-6) #local stopping criteria
@@ -145,27 +117,50 @@ function akaikeInformationCriterion(RSS,numParams,dataLen)
     return dataLen*log(RSS/dataLen)+2*K+2*K*((K+1)/(dataLen-K-1))
 end
 
-function processCompressedSensingBatch(D::Array{Complex128,2},Ntau::Int,Npmax::Int)
-
+function processDataStack(Y::Array{Complex128,2},Nsing::Int,Npoles::Int,Nstarts::Int,Textrap::Int)
+    pmat = {}
+    amat = {}
+    Bmat = {}
+    for j=1:Nsing
+        AICcVec = zeros(Float64,Npoles)
+        ptemp = {}
+        atemp = {}
+        for k=1:Npoles
+            (p,a) = afdT(Y[:,j],k,Nstarts)
+            push!(ptemp,p)
+            push!(atemp,a)
+            B = genPsiBasis(p,pulseFun(size(Y,1)))
+            Yhat = B*a
+            RSS = norm(Y[:,j]-Yhat)
+            AICcVec[k] = akaikeInformationCriterion(RSS,4*k+1,2*size(Y,1))
+        end
+        optInd = indmin(AICcVec)
+        push!(pmat,ptemp[optInd])
+        push!(amat,atemp[optInd])
+        B = genPsiBasis(pmat[j],pulseFun(Textrap))
+        push!(Bmat,B)
+    end
+    That = zeros(Complex128,(Textrap,Nsing))
+    for k=1:Nsing
+        That[:,k] = Bmat[k]*amat[k]
+    end
+    return (That,pmat,amat)
 end
 
-function optimalAfdTruncation(poles::Vector{Complex128},amps::Vector{Complex128},xn::Vector{Complex128})
-    L = length(poles)
-    Nt = length(xn)
-    if length(amps)!=L
-        error("# of poles should be the same as number of amplitudes")
+function unfoldMatrix(M::Array,N::Int)
+    uM = M[:,1:N]
+    for k=2:int(size(M,2)/N)
+        uM = cat(1,uM,M[:,((k-1)*N+1):(k*N)]);
     end
-    infVec = zeros(Float64,L)
-    for k=1:L
-        model = [reconstructTimeDomain(poles[1:k],amps[1:k],i)::Complex128 for i=linspace(1,Nt,Nt)]
-        rssval = residualSumOfSquares(model,xn)
-        # one complex value = 2 parameters, so each pole and amp is 4 parameters, each complex valued input
-        # is worth 2 data points of input in this thinking, thus:
-        infVec[k] = akaikeInformationCriterion(rssval,4*k,2*length(xn))
+    return uM
+end
+
+function cubeMatrix(M::Array,N::Int)
+    cM = zeros(typeof(M[1]),(N,size(M,2),int(size(M,1)/N)))
+    for k=1:int(size(M,1)/N)
+        cM[:,:,k] = M[((k-1)*N+1):(k*N),:]
     end
-    infMinInd = indmin(infVec)
-    aicVec = exp((-infVec+infVec[infMinInd])/2)
-    return indmax(aicVec)
+    return cM
 end
 
 
