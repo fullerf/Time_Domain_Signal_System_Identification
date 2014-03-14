@@ -18,12 +18,42 @@ function psiNext(p::Vector,psi::Vector)
     return psik[2:end]
 end
 
+function psiNextRecursive(p::Vector,psi::Vector)
+    psi = cat(1,zero(Complex128),psi)
+    N = length(psi)
+    psik = zero(psi)
+    if length(p)==1
+        p = cat(1,zero(p[1]),p)
+        c = sqrt(1-abs2(p[end]))
+        #in this case we assume psi = u(t), rather than the previous psi
+        for j=1:(N-1)
+            psik[j+1] = p[end]*psik[j]+c*psi[j+1]
+        end
+    else
+        c = sqrt((1-abs2(p[end]))/(1-abs2(p[end-1])))
+        for j=1:(N-1)
+            psik[j+1] = p[end]*psik[j] + c*(psi[j] - conj(p[end-1])*psi[j+1])
+        end
+    end
+    return psik[2:end]
+end
+
 function genPsiBasis(p::Vector,u::Vector)
     N = length(p)
     B = zeros(Complex128,(length(u),N+1))
     B[:,1] = u
     for k=1:N
         B[:,k+1] = psiNext([p[1:k]],B[:,k])
+    end
+    return B[:,2:end]
+end
+
+function genPsiBasisRecursive(p::Vector,u::Vector)
+    N = length(p)
+    B = zeros(Complex128,(length(u),N+1))
+    B[:,1] = u
+    for k=1:N
+        B[:,k+1] = psiNextRecursive([p[1:k]],B[:,k])
     end
     return B[:,2:end]
 end
@@ -52,12 +82,46 @@ function filterR(p::Complex128,R::Vector)
     return Rkp1[2:end]
 end
 
+function filterRrecursive(p::Complex128,R::Vector)
+    ai = 1/conj(p)
+    R = cat(1,zero(Complex128),R)
+    N = length(R)
+    Rkp1 = zero(R)
+    for k=1:(N-1)
+        Rkp1[k+1]  = ai*Rkp1[k]-ai*(R[k+1]-p*R[k])
+    end
+    return Rkp1[2:end]
+end
+
 function dictObj(x,g,target)
     p = x[1]*exp(im*2*pi*x[2])
     trial = dictElem(p,size(target,1))
     r = sum(abs2(trial'*target),2)
     return r[1]
 end
+
+function dictObjNbest(x,g,target)
+    p = [(x[i]*exp(im*2*pi*x[i+1]))::Complex128 for i=1:2:length(x)]
+    R = copy(target)
+    for k=1:length(p)
+        trial = dictElem(p[k],size(target,1))
+        #R = filterR(p[k],R - trial*((trial'*R)[1]))
+        R = filterRrecursive(p[k],R - trial*((trial'*R)[1]))
+    end
+    r = norm(R)
+    return r
+end
+
+function nthRemainder(p,target)
+    R = copy(target)
+    for k=1:length(p)
+        trial = dictElem(p[k],size(target,1))
+        #R = filterR(p[k],R - trial*((trial'*R)[1]))
+        R = filterRrecursive(p[k],R - trial*((trial'*R)[1]))
+    end
+    return R
+end
+
 
 function unitDiskGrid(n::Int,delta::Float64)
     N = nextpow2(n)
@@ -98,15 +162,79 @@ function afdT(target::Array,Npoles::Int,Nstarts::Int)
             beta0 = [abs(Z[k]); ((angle(Z[k])+pi)/(2*pi))]
             (ovec[k],avec[k,:],e) = optimize(opt,beta0)
         end
-
         aopt = avec[indmax(ovec),:]
         p[j] = aopt[1]*exp(im*2*pi*aopt[2])
-        ep = dictElem(p[j],size(target,1))
+        ep = dictElem(p[j],size(target,1))        
         a[j,:] = ep'*gk
         for i=1:size(target,2)
-            gk[:,i] = filterR(p[j],(gk[:,i]-a[j,i]*ep))
+            gk[:,i] = filterRrecursive(p[j],(gk-a[j,i]*ep))
         end
     end
+    return (p,a)
+end
+
+function afdTCyclic(target::Array,polesIn::Vector,Nstarts::Int,CycleTol::Float64,CycleMax::Int)
+    Z = unitDiskGrid(int(sqrt(Nstarts)),0.2)
+    Npoles = length(polesIn)
+    opt = Opt(:LN_SBPLX,2)
+    ftol_rel!(opt,1e-6) #local stopping criteria
+    lb = [0.01; 0]
+    ub = [0.95; 1-eps(Float64)]
+    lower_bounds!(opt,lb)
+    upper_bounds!(opt,ub)
+    avec = zeros(Complex128,(length(Z),2))
+    ovec = zeros(Float64,length(Z))
+    p = zero(polesIn)
+    prel = CycleTol+1;
+    cycle_count = 0;
+    while ((prel>CycleTol) && (cycle_count<CycleMax))
+        cycle_count += 1
+        for j=1:Npoles
+            pold = copy(p)
+            pprime = pold[(1:Npoles).!=j]
+            gk = nthRemainder(pprime,target)
+            max_objective!(opt,(x,g)->dictObj(x,g,gk)[1])
+            for k=1:length(Z)
+                beta0 = [abs(Z[k]); ((angle(Z[k])+pi)/(2*pi))]
+                (ovec[k],avec[k,:],e) = optimize(opt,beta0)
+            end
+            aopt = avec[indmax(ovec),:]
+            p[j] = aopt[1]*exp(im*2*pi*aopt[2])
+            prel = norm(p-pold)/norm(pold)
+        end
+    end
+    B = genPsiBasisRecursive(p,pulseFun(size(target,1)))
+    a = B\target
+    return (p,a)
+end
+
+function poles2vec(p::Vector{Complex128})
+    r = zeros(Float64,length(p)*2)
+    r[1:2:end] = abs(p)
+    r[2:2:end] = (angle(p)+pi)/(2*pi)
+    return r
+end
+
+function afdTNbest(target::Array,Npoles::Int,gWallClockTime::Number,beta0::Vector)
+    opt = Opt(:GN_MLSL_LDS,Npoles*2)
+    lopt = Opt(:LN_SBPLX,Npoles*2)
+    ftol_rel!(lopt,1e-6) #local stopping criteria
+    maxtime!(opt,gWallClockTime) #global stopping critera
+    lb = [0.01; 0]
+    ub = [0.99; 1-eps(Float64)]
+    lb = repmat(lb,Npoles)
+    ub = repmat(ub,Npoles)
+    lower_bounds!(opt,lb)
+    upper_bounds!(opt,ub)
+    local_optimizer!(opt,lopt)
+    p = zeros(Complex128,Npoles)
+    a = zeros(Complex128,(Npoles,size(target,2)))
+    gk = copy(target)
+    min_objective!(opt,(x,g)->dictObjNbest(x,g,gk)[1])
+    (r,popt,e) = optimize(opt,beta0)
+    p = [(popt[i]*exp(im*2*pi*popt[i+1]))::Complex128 for i=1:2:(Npoles*2)]
+    B = genPsiBasis(p,pulseFun(size(target,1)))
+    a = B\target
     return (p,a)
 end
 
@@ -145,6 +273,43 @@ function processDataStack(Y::Array{Complex128,2},Nsing::Int,Npoles::Int,Nstarts:
         That[:,k] = Bmat[k]*amat[k]
     end
     return (That,pmat,amat)
+end
+
+function refineDataStack(Y::Array{Complex128,2},Nsing::Int,pmat,SearchTime::Number,Textrap::Int)
+    Bmat = {}
+    pref = {}
+    aref = {}
+    for j=1:Nsing
+        pin = poles2vec(pmat[j])
+        (p,a) = afdTNbest(Y[:,j],length(pmat[j]),SearchTime,pin)
+        push!(pref,p)
+        push!(aref,a)
+        B = genPsiBasis(pref[j],pulseFun(Textrap))
+        push!(Bmat,B)
+    end
+    That = zeros(Complex128,(Textrap,Nsing))
+    for k=1:Nsing
+        That[:,k] = Bmat[k]*aref[k]
+    end
+    return (That,pref,aref)
+end
+
+function refineDataStackCyclic(Y::Array{Complex128,2},Nsing::Int,pmat,Nstarts::Int,CycleTol::Float64,CycleMax::Int,Textrap::Int)
+    Bmat = {}
+    pref = {}
+    aref = {}
+    for j=1:Nsing
+        (p,a) = afdTCyclic(Y[:,j],pmat[j],Nstarts,CycleTol,CycleMax)
+        push!(pref,p)
+        push!(aref,a)
+        B = genPsiBasis(pref[j],pulseFun(Textrap))
+        push!(Bmat,B)
+    end
+    That = zeros(Complex128,(Textrap,Nsing))
+    for k=1:Nsing
+        That[:,k] = Bmat[k]*aref[k]
+    end
+    return (That,pref,aref)
 end
 
 function unfoldMatrix(M::Array,N::Int)
