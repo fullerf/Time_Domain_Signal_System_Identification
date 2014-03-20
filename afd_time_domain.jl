@@ -122,13 +122,6 @@ function dictObj(x,g,target)
     return r[1]
 end
 
-function dictObjNonImpulsive(x,g,target::Vector,u::Vector)
-    p = x[1]*exp(im*2*pi*x[2])
-    trial = dictElemRecursive(p,u)
-    r = sum(abs2(trial'*target),2)
-    return r[1]
-end
-
 function dictObjNbest(x,g,target)
     p = [(x[i]*exp(im*2*pi*x[i+1]))::Complex128 for i=1:2:length(x)]
     R = copy(target)
@@ -147,7 +140,7 @@ function nthRemainder(p,target)
     for k=1:length(p)
         trial = dictElem(p[k],size(target,1))
         for j=1:L
-            R[:,j] = filterRrecursive(p[k],R[:,j] - trial*((trial'*R[:,j])[1]))
+            R[:,j] = filterRrecursive(p[k],R[:,j] - dot(trial,R[:,j])*trial)
         end
     end
     return R
@@ -179,7 +172,7 @@ function afdT(target::Array,Npoles::Int,Nstarts::Int)
     opt = Opt(:LN_SBPLX,2)
     ftol_rel!(opt,1e-6) #local stopping criteria
     lb = [0.01; 0]
-    ub = [1-eps(Float64)*length(target); 1-eps(Float64)]
+    ub = [0.999; 1-eps(Float64)]
     lower_bounds!(opt,lb)
     upper_bounds!(opt,ub)
     avec = zeros(Complex128,(length(Z),2))
@@ -205,43 +198,13 @@ function afdT(target::Array,Npoles::Int,Nstarts::Int)
     return (p,a)
 end
 
-function afdTNonImpulsive(target::Array,Npoles::Int,Nstarts::Int,u::Vector)
-    Z = unitDiskGrid(int(sqrt(Nstarts)),0.2)
-    opt = Opt(:LN_SBPLX,2)
-    ftol_rel!(opt,1e-6) #local stopping criteria
-    lb = [0.01; 0]
-    ub = [0.9999999999; 1-eps(Float64)]
-    lower_bounds!(opt,lb)
-    upper_bounds!(opt,ub)
-    avec = zeros(Complex128,(length(Z),2))
-    ovec = zeros(Float64,length(Z))
-    p = zeros(Complex128,Npoles)
-    a = zeros(Complex128,(Npoles,size(target,2)))
-    gk = copy(target)
-    for j=1:Npoles
-        max_objective!(opt,(x,g)->dictObjNonImpulsive(x,g,gk,u)[1])
-        for k=1:length(Z)
-            beta0 = [abs(Z[k]); ((angle(Z[k])+pi)/(2*pi))]
-            (ovec[k],avec[k,:],e) = optimize(opt,beta0)
-        end
-        aopt = avec[indmax(ovec),:]
-        p[j] = aopt[1]*exp(im*2*pi*aopt[2])
-        ep = dictElemRecursive(p[j],u)        
-        a[j,:] = ep'*gk
-        for i=1:size(target,2)
-            gk[:,i] = filterRrecursive(p[j],(gk-a[j,i]*ep))
-        end
-    end
-    return (p,a)
-end
-
 function afdTCyclic(target::Array,polesIn::Vector,Nstarts::Int,CycleTol::Float64,CycleMax::Int)
-    Z = unitDiskGrid(int(sqrt(Nstarts)),0.2)
+    Z = unitDiskGrid(int(sqrt(Nstarts)),0.01)
     Npoles = length(polesIn)
     opt = Opt(:LN_SBPLX,2)
-    ftol_rel!(opt,1e-6) #local stopping criteria
+    ftol_rel!(opt,1e-12) #local stopping criteria
     lb = [0.01; 0]
-    ub = [1-eps(Float64)*length(target); 1-eps(Float64)]
+    ub = [0.9999999999; 1-eps(Float64)]
     lower_bounds!(opt,lb)
     upper_bounds!(opt,ub)
     avec = zeros(Complex128,(length(Z),2))
@@ -258,52 +221,20 @@ function afdTCyclic(target::Array,polesIn::Vector,Nstarts::Int,CycleTol::Float64
             max_objective!(opt,(x,g)->dictObj(x,g,gk)[1])
             for k=1:length(Z)
                 beta0 = [abs(Z[k]); ((angle(Z[k])+pi)/(2*pi))]
-                (ovec[k],avec[k,:],e) = optimize(opt,beta0)
+                (ovec[k],avec[k,:],errcode) = optimize(opt,beta0)
             end
             aopt = avec[indmax(ovec),:]
             p[j] = aopt[1]*exp(im*2*pi*aopt[2])
             prel = norm(p-pold)/norm(pold)
+            #println(prel)
         end
     end
     B = genPsiBasisRecursive(p,pulseFun(size(target,1)))
     a = B\target
+    #println(cycle_count)
     return (p,a)
 end
 
-function afdTCyclicNonImpulsive(target::Array,polesIn::Vector,Nstarts::Int,CycleTol::Float64,CycleMax::Int)
-    Z = unitDiskGrid(int(sqrt(Nstarts)),0.2)
-    Npoles = length(polesIn)
-    opt = Opt(:LN_SBPLX,2)
-    ftol_rel!(opt,1e-6) #local stopping criteria
-    lb = [0.01; 0]
-    ub = [0.95; 1-eps(Float64)]
-    lower_bounds!(opt,lb)
-    upper_bounds!(opt,ub)
-    avec = zeros(Complex128,(length(Z),2))
-    ovec = zeros(Float64,length(Z))
-    p = zero(polesIn)
-    prel = CycleTol+1;
-    cycle_count = 0;
-    while ((prel>CycleTol) && (cycle_count<CycleMax))
-        cycle_count += 1
-        for j=1:Npoles
-            pold = copy(p)
-            pprime = pold[(1:Npoles).!=j]
-            gk = nthRemainder(pprime,target)
-            max_objective!(opt,(x,g)->dictObj(x,g,gk,u)[1])
-            for k=1:length(Z)
-                beta0 = [abs(Z[k]); ((angle(Z[k])+pi)/(2*pi))]
-                (ovec[k],avec[k,:],e) = optimize(opt,beta0)
-            end
-            aopt = avec[indmax(ovec),:]
-            p[j] = aopt[1]*exp(im*2*pi*aopt[2])
-            prel = norm(p-pold)/norm(pold)
-        end
-    end
-    B = genPsiBasisRecursive(p,pulseFun(size(target,1)))
-    a = B\target
-    return (p,a)
-end
 
 function poles2vec(p::Vector{Complex128})
     r = zeros(Float64,length(p)*2)
@@ -318,7 +249,7 @@ function afdTNbest(target::Array,Npoles::Int,gWallClockTime::Number,beta0::Vecto
     ftol_rel!(lopt,1e-6) #local stopping criteria
     maxtime!(opt,gWallClockTime) #global stopping critera
     lb = [0.01; 0]
-    ub = [0.99; 1-eps(Float64)]
+    ub = [0.99999; 1-eps(Float64)]
     lb = repmat(lb,Npoles)
     ub = repmat(ub,Npoles)
     lower_bounds!(opt,lb)
@@ -392,7 +323,7 @@ function processDataStackCyclic(Y::Array{Complex128,2},minNpoles::Int,maxNpoles:
             B = genPsiBasis(p,pulseFun(size(Y,1)))
             Yhat = B*a
             R = (Y[:,j]-Yhat)
-            RSS = (abs(R'*R))[1]
+            RSS = sum(abs(R'*R))
             aicval = akaikeInformationCriterion(RSS,2*length(p)+2*length(a),2*length(Y))
             push!(AICc,aicval)
         end
@@ -402,7 +333,6 @@ function processDataStackCyclic(Y::Array{Complex128,2},minNpoles::Int,maxNpoles:
         B = genPsiBasis(pmat[j],pulseFun(Textrap))
         push!(Bmat,B)
         println(optInd+minNpoles-1)
-        println(AICc[optInd])
     end
     That = zeros(Complex128,(Textrap,size(Y,2)))
     for k=1:size(Y,2)
@@ -424,16 +354,17 @@ function processDataStackCyclicGlobal(Y::Array{Complex128,2},minNpoles::Int,maxN
         B = genPsiBasis(p,pulseFun(size(Y,1)))
         Yhat = B*a
         R = (Y-Yhat)
-        RSS = (abs(R'*R))[1]
+        RSS = sum((abs(R'*R)))
         aicval = akaikeInformationCriterion(RSS,2*length(p)+2*length(a),2*length(Y))
+        println(aicval)
         push!(AICc,aicval)
     end
     optInd = indmin(AICc)
     popt = ptemp[optInd]
     aopt = atemp[optInd]
     B = genPsiBasis(popt,pulseFun(Textrap))
-    println(optInd+minNpoles-1)
-    println(AICc[optInd])
+    #println(optInd+minNpoles-1)
+    #println(AICc[optInd])
     That = B*aopt
     return (That,popt,aopt)
 end
