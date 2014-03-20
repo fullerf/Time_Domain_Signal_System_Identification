@@ -100,15 +100,19 @@ function filterR(p::Complex128,R::Vector)
     return Rkp1[2:end]
 end
 
-function filterRrecursive(p::Complex128,R::Vector)
+function filterRrecursive(p::Complex128,R)
     ai = 1/conj(p)
-    R = cat(1,zero(Complex128),R)
-    N = length(R)
+    Rp = cat(1,zeros(Complex128,(1,size(R,2))),R)
+    N = size(Rp,1)
     Rkp1 = zero(R)
-    for k=1:(N-1)
-        Rkp1[k+1]  = ai*Rkp1[k]-ai*(R[k+1]-p*R[k])
+    for j=1:size(R,2)
+        Rkp1j = zero(Rp[:,j])
+        for k=1:(N-1)
+            Rkp1j[k+1]  = ai*Rkp1[k]-ai*(Rp[k+1]-p*Rp[k])
+        end
+        Rkp1[:,j] = Rkp1j[2:end]
     end
-    return Rkp1[2:end]
+    return Rkp1
 end
 
 function dictObj(x,g,target)
@@ -139,10 +143,12 @@ end
 
 function nthRemainder(p,target)
     R = copy(target)
+    L = size(target,2);
     for k=1:length(p)
         trial = dictElem(p[k],size(target,1))
-        #R = filterR(p[k],R - trial*((trial'*R)[1]))
-        R = filterRrecursive(p[k],R - trial*((trial'*R)[1]))
+        for j=1:L
+            R[:,j] = filterRrecursive(p[k],R[:,j] - trial*((trial'*R[:,j])[1]))
+        end
     end
     return R
 end
@@ -173,7 +179,7 @@ function afdT(target::Array,Npoles::Int,Nstarts::Int)
     opt = Opt(:LN_SBPLX,2)
     ftol_rel!(opt,1e-6) #local stopping criteria
     lb = [0.01; 0]
-    ub = [0.95; 1-eps(Float64)]
+    ub = [1-eps(Float64)*length(target); 1-eps(Float64)]
     lower_bounds!(opt,lb)
     upper_bounds!(opt,ub)
     avec = zeros(Complex128,(length(Z),2))
@@ -191,9 +197,10 @@ function afdT(target::Array,Npoles::Int,Nstarts::Int)
         p[j] = aopt[1]*exp(im*2*pi*aopt[2])
         ep = dictElem(p[j],size(target,1))        
         a[j,:] = ep'*gk
-        for i=1:size(target,2)
-            gk[:,i] = filterRrecursive(p[j],(gk-a[j,i]*ep))
-        end
+        #for i=1:size(target,2)
+        #    gk[:,i] = filterRrecursive(p[j],(gk-a[j,i]*ep))
+        #end
+        gk = filterRrecursive(p[j],(gk-ep*a[j,:]))
     end
     return (p,a)
 end
@@ -203,7 +210,7 @@ function afdTNonImpulsive(target::Array,Npoles::Int,Nstarts::Int,u::Vector)
     opt = Opt(:LN_SBPLX,2)
     ftol_rel!(opt,1e-6) #local stopping criteria
     lb = [0.01; 0]
-    ub = [0.95; 1-eps(Float64)]
+    ub = [0.9999999999; 1-eps(Float64)]
     lower_bounds!(opt,lb)
     upper_bounds!(opt,ub)
     avec = zeros(Complex128,(length(Z),2))
@@ -234,7 +241,7 @@ function afdTCyclic(target::Array,polesIn::Vector,Nstarts::Int,CycleTol::Float64
     opt = Opt(:LN_SBPLX,2)
     ftol_rel!(opt,1e-6) #local stopping criteria
     lb = [0.01; 0]
-    ub = [0.95; 1-eps(Float64)]
+    ub = [1-eps(Float64)*length(target); 1-eps(Float64)]
     lower_bounds!(opt,lb)
     upper_bounds!(opt,ub)
     avec = zeros(Complex128,(length(Z),2))
@@ -385,8 +392,8 @@ function processDataStackCyclic(Y::Array{Complex128,2},minNpoles::Int,maxNpoles:
             B = genPsiBasis(p,pulseFun(size(Y,1)))
             Yhat = B*a
             R = (Y[:,j]-Yhat)
-            RSS = abs(dot(R,R))
-            aicval = akaikeInformationCriterion(RSS,4*k,2*size(Y,1))
+            RSS = (abs(R'*R))[1]
+            aicval = akaikeInformationCriterion(RSS,2*length(p)+2*length(a),2*length(Y))
             push!(AICc,aicval)
         end
         optInd = indmin(AICc)
@@ -402,6 +409,33 @@ function processDataStackCyclic(Y::Array{Complex128,2},minNpoles::Int,maxNpoles:
         That[:,k] = Bmat[k]*amat[k]
     end
     return (That,pmat,amat)
+end
+
+function processDataStackCyclicGlobal(Y::Array{Complex128,2},minNpoles::Int,maxNpoles::Int,maxNcycles::Int,Nstarts::Int,CycleTol::Float64,Textrap::Int)
+    Bmat = {}
+    AICc = {}
+    ptemp   = {}
+    atemp   = {}
+    for k=minNpoles:maxNpoles
+        (pinit,ainit) = afdT(Y,k,Nstarts)
+        (p,a) = afdTCyclic(Y,pinit,Nstarts,CycleTol,maxNcycles)
+        push!(ptemp,p)
+        push!(atemp,a)
+        B = genPsiBasis(p,pulseFun(size(Y,1)))
+        Yhat = B*a
+        R = (Y-Yhat)
+        RSS = (abs(R'*R))[1]
+        aicval = akaikeInformationCriterion(RSS,2*length(p)+2*length(a),2*length(Y))
+        push!(AICc,aicval)
+    end
+    optInd = indmin(AICc)
+    popt = ptemp[optInd]
+    aopt = atemp[optInd]
+    B = genPsiBasis(popt,pulseFun(Textrap))
+    println(optInd+minNpoles-1)
+    println(AICc[optInd])
+    That = B*aopt
+    return (That,popt,aopt)
 end
 
 function processDataStackMLSL(Y::Array{Complex128,2},minNpoles::Int,maxNpoles::Int,Nstarts::Int,SearchTime::Number,Textrap::Int)
@@ -524,4 +558,36 @@ function fftaxis(N::Int,TSpac=1.0)
     return r
 end
 
+function unfoldCube(M::Array)
+    R = zeros(typeof(M[1]),(size(M,1)*size(M,2),size(M,3)))
+    N = size(M,1);
+    for j=1:size(M,2)
+        R[((j-1)*N+1):(j*N),:] = squeeze(M[:,j,:],2);
+    end
+    return R
+end
 
+function optimalSVDTrunc(u,s,v)
+    N = size(v,1)
+    M = size(v,1)
+    if isreal(u[1])
+        f = 1
+    else
+        f = 2;
+    end
+    AICc = {}
+    Y = u*diagm(s)*v';
+    for k=1:(N-1)
+        Yhat = u[:,1:k]*diagm(s[1:k])*v[:,1:k]'
+        R = Y-Yhat
+        RSS = abs(R'*R)[1]
+        push!(AICc,akaikeInformationCriterion(RSS,k,f*N*M))
+    end
+    optInd = indmin(AICc)
+    return (AICc,optInd)
+end
+
+function w2wn(w::Vector)
+    c = 299.792458; #nm/fs
+    return 1E7*w/(2*pi*c)
+end
