@@ -323,8 +323,10 @@ function processDataStackCyclic(Y::Array{Complex128,2},minNpoles::Int,maxNpoles:
             B = genPsiBasis(p,pulseFun(size(Y,1)))
             Yhat = B*a
             R = (Y[:,j]-Yhat)
-            RSS = sum(abs(R'*R))
-            aicval = akaikeInformationCriterion(RSS,2*length(p)+2*length(a),2*length(Y))
+            RR = R'*R
+            println(size(RR))
+            RSS = abs(RR)[1]
+            aicval = akaikeInformationCriterion(RSS,2*length(p)+2*length(a),2*size(Y,1))
             push!(AICc,aicval)
         end
         optInd = indmin(AICc)
